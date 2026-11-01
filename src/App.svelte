@@ -1,168 +1,106 @@
 <script>
   import { onMount } from 'svelte';
-  import { api, loadPayPalSdk } from './api.js';
-
-  const STATUS_LABELS = {
-    draft: 'Not funded',
-    awaiting_payment: 'Waiting for client',
-    funded: 'Funded (held)',
-    released: 'Released',
-    partially_released: 'Partly released',
-    voided: 'Voided, refunded',
-  };
+  import { api } from './api.js';
+  import Composer from './components/Composer.svelte';
+  import MilestoneCard from './components/MilestoneCard.svelte';
+  import Summary from './components/Summary.svelte';
 
   let config = $state(null);
   let milestones = $state([]);
+  let loading = $state(true);
   let error = $state('');
-  let busy = $state('');
-  let form = $state({ title: 'Landing page, mobile + desktop', amount: '400.00' });
-  let partialAmounts = $state({});
-  let paypalStatus = $state({});
 
   onMount(async () => {
     try {
       [config, milestones] = await Promise.all([api('/config'), api('/milestones')]);
     } catch (e) {
       error = e.message;
+    } finally {
+      loading = false;
     }
   });
 
   function replace(updated) {
     milestones = milestones.map((m) => (m.id === updated.id ? updated : m));
   }
-
-  async function run(key, fn) {
-    busy = key;
-    error = '';
-    try {
-      await fn();
-    } catch (e) {
-      error = e.message;
-    } finally {
-      busy = '';
-    }
-  }
-
-  function createMilestone(event) {
-    event.preventDefault();
-    run('create', async () => {
-      const milestone = await api('/milestones', { method: 'POST', body: { ...form, currency: 'USD' } });
-      milestones = [milestone, ...milestones];
-    });
-  }
-
-  function release(milestone, amount) {
-    run(`release-${milestone.id}`, async () => {
-      replace(await api(`/milestones/${milestone.id}/release`, { method: 'POST', body: amount ? { amount } : {} }));
-    });
-  }
-
-  function voidHold(milestone) {
-    run(`void-${milestone.id}`, async () => {
-      replace(await api(`/milestones/${milestone.id}/void`, { method: 'POST' }));
-    });
-  }
-
-  function checkPaypal(milestone) {
-    run(`check-${milestone.id}`, async () => {
-      paypalStatus[milestone.id] = await api(`/milestones/${milestone.id}/paypal`);
-    });
-  }
-
-  // Svelte action: renders PayPal buttons that fund this milestone with an authorization hold.
-  function paypalButtons(node, milestone) {
-    let buttons;
-    loadPayPalSdk(config.paypalClientId, milestone.currency)
-      .then((paypal) => {
-        buttons = paypal.Buttons({
-          style: { layout: 'horizontal', tagline: false, height: 40 },
-          createOrder: async () => (await api(`/milestones/${milestone.id}/order`, { method: 'POST' })).id,
-          onApprove: () => run(`fund-${milestone.id}`, async () => {
-            replace(await api(`/milestones/${milestone.id}/authorize`, { method: 'POST' }));
-          }),
-          onError: (e) => { error = e?.message || 'PayPal could not complete the payment'; },
-        });
-        return buttons.render(node);
-      })
-      .catch((e) => { error = e.message; });
-    return { destroy: () => buttons?.close?.() };
-  }
-
-  const money = (amount, currency) => `${currency} ${amount}`;
 </script>
 
-<main>
-  <header>
-    <h1>Handshake</h1>
-    <p class="lede">Clients fund each milestone with a PayPal hold. Money is released in full, in part, or refunded, based on the work.</p>
+<div class="shell">
+  <header class="topbar">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="9" fill="var(--accent)" />
+        <path d="M8 17.5l4.2 4.2a2 2 0 0 0 2.8 0L24 12.7M8 11.5h6M18 20.5h6" stroke="var(--accent-ink)" stroke-width="2.4" stroke-linecap="round" fill="none" />
+      </svg>
+      <span>Handshake</span>
+    </div>
     {#if config}
-      <span class="env">PayPal {config.paypalEnv}</span>
+      <span class="env-pill" class:live={config.paypalEnv === 'live'}>
+        <span class="dot"></span>PayPal {config.paypalEnv}
+      </span>
     {/if}
   </header>
 
-  {#if config && !config.paypalConfigured}
-    <p class="notice">PayPal isn't configured yet. Copy <code>.env.example</code> to <code>.env</code>, add your sandbox client ID and secret, then restart the server.</p>
-  {/if}
+  <main>
+    <section class="intro">
+      <p class="eyebrow">Milestone payments</p>
+      <h1>Get paid for the work,<br /><em>not the argument.</em></h1>
+      <p class="lede">Clients fund each milestone up front with a PayPal hold. When the work lands, release it in full, release part of it, or return it. Every cent is accounted for.</p>
+    </section>
 
-  {#if error}
-    <p class="notice error" role="alert">{error}</p>
-  {/if}
-
-  <form class="card new" onsubmit={createMilestone}>
-    <h2>New milestone</h2>
-    <label>
-      What's being delivered
-      <input bind:value={form.title} maxlength="120" required />
-    </label>
-    <label class="amount">
-      Amount (USD)
-      <input bind:value={form.amount} inputmode="decimal" required />
-    </label>
-    <button disabled={busy === 'create'}>Add milestone</button>
-  </form>
-
-  {#each milestones as milestone (milestone.id)}
-    <article class="card">
-      <div class="row">
-        <h2>{milestone.title}</h2>
-        <span class="badge {milestone.status}">{STATUS_LABELS[milestone.status] || milestone.status}</span>
+    {#if error}
+      <div class="banner error" role="alert">
+        <strong>Something went wrong.</strong> {error}
+        <button class="ghost small" onclick={() => (error = '')}>Dismiss</button>
       </div>
-      <p class="amount-line">{money(milestone.amount, milestone.currency)}
-        {#if milestone.releasedAmount}<span>· {money(milestone.releasedAmount, milestone.currency)} paid to freelancer</span>{/if}
-        {#if milestone.returnedAmount && milestone.returnedAmount !== '0.00'}<span>· {money(milestone.returnedAmount, milestone.currency)} back to client</span>{/if}
-      </p>
+    {/if}
 
-      {#if ['draft', 'awaiting_payment'].includes(milestone.status) && config?.paypalConfigured}
-        <div class="paypal" use:paypalButtons={milestone}></div>
-      {/if}
+    {#if config && !config.paypalConfigured}
+      <div class="banner">
+        <strong>Connect PayPal sandbox to fund milestones.</strong>
+        Copy <code>.env.example</code> to <code>.env</code>, add your sandbox client ID and secret, then restart <code>npm run dev</code>.
+      </div>
+    {/if}
 
-      {#if milestone.status === 'funded'}
-        <div class="actions">
-          <button onclick={() => release(milestone)} disabled={!!busy}>Release all</button>
-          <span class="partial">
-            <input placeholder="e.g. 300.00" inputmode="decimal" bind:value={partialAmounts[milestone.id]} aria-label="Partial amount" />
-            <button class="secondary" onclick={() => release(milestone, partialAmounts[milestone.id])} disabled={!!busy || !partialAmounts[milestone.id]}>Release part</button>
-          </span>
-          <button class="danger" onclick={() => voidHold(milestone)} disabled={!!busy}>Void hold</button>
+    <Summary {milestones} />
+
+    <div class="layout">
+      <section class="list" aria-label="Milestones">
+        <div class="section-head">
+          <h2>Milestones</h2>
+          <span class="count">{milestones.length}</span>
         </div>
-      {/if}
 
-      {#if milestone.authorizationId}
-        <div class="paypal-truth">
-          <button class="link" onclick={() => checkPaypal(milestone)} disabled={!!busy}>Check status with PayPal</button>
-          {#if paypalStatus[milestone.id]}
-            <span>Authorization {paypalStatus[milestone.id].id}: <strong>{paypalStatus[milestone.id].status}</strong></span>
-          {/if}
+        {#if loading}
+          <div class="skeleton"></div>
+          <div class="skeleton"></div>
+        {:else}
+          {#each milestones as milestone (milestone.id)}
+            <MilestoneCard {milestone} {config} onupdate={replace} onerror={(message) => (error = message)} />
+          {:else}
+            <div class="empty">
+              <div class="empty-art" aria-hidden="true">
+                <span></span><span></span><span></span>
+              </div>
+              <h3>No milestones yet</h3>
+              <p>Break the job into milestones on the right. Each one is funded and released separately.</p>
+            </div>
+          {/each}
+        {/if}
+      </section>
+
+      <aside class="side">
+        <Composer oncreate={(m) => (milestones = [m, ...milestones])} onerror={(message) => (error = message)} />
+
+        <div class="how">
+          <h3>How money moves</h3>
+          <ol>
+            <li><span class="step-dot held"></span><div><strong>Client funds</strong><p>PayPal places a hold. Nothing is charged yet, but the freelancer can see it's there.</p></div></li>
+            <li><span class="step-dot paid"></span><div><strong>Work is delivered</strong><p>Release all of it, or part of it if only some of the work meets the brief.</p></div></li>
+            <li><span class="step-dot back"></span><div><strong>The rest goes back</strong><p>Anything not released returns to the client automatically.</p></div></li>
+          </ol>
         </div>
-      {/if}
-
-      <ol class="timeline">
-        {#each milestone.events as event}
-          <li><time>{new Date(event.at).toLocaleString()}</time> {event.type.replaceAll('_', ' ')}{event.amount ? ` · ${event.amount}` : ''}</li>
-        {/each}
-      </ol>
-    </article>
-  {:else}
-    <p class="empty">No milestones yet. Add one above, then fund it with a sandbox PayPal account.</p>
-  {/each}
-</main>
+      </aside>
+    </div>
+  </main>
+</div>
