@@ -1,0 +1,28 @@
+{
+  "name": "handshake",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "vite",
+    "server": "node --env-file-if-exists=.env server/index.js",
+    "start": "NODE_ENV=production node server/index.js",
+    "build": "vite build",
+    "test": "vitest run",
+    "sandbox:check": "node --env-file-if-exists=.env scripts/sandbox-check.mjs"
+  },
+  "dependencies": {
+    "express": "^5.3.0"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "svelte": "^5.57.3",
+    "vite": "^8.3.5",
+    "vitest": "^4.1.12"
+  }
+}
