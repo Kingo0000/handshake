@@ -10,6 +10,9 @@ export function loadConfig(env = process.env) {
     port: Number(env.PORT) || 8787,
     isProduction: env.NODE_ENV === 'production',
     dataPath: env.DATA_PATH || new URL('../data/db.json', import.meta.url).pathname,
+    evidencePath: env.EVIDENCE_PATH || new URL('../data/evidence', import.meta.url).pathname,
+    openaiApiKey: env.OPENAI_API_KEY || '',
+    openaiModel: env.OPENAI_MODEL || undefined,
     paypal: {
       env: paypalEnv,
       baseUrl: PAYPAL_BASES[paypalEnv],

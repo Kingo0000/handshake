@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { api } from './api.js';
   import Composer from './components/Composer.svelte';
+  import ContractDrafter from './components/ContractDrafter.svelte';
   import MilestoneCard from './components/MilestoneCard.svelte';
   import Summary from './components/Summary.svelte';
 
@@ -45,7 +46,7 @@
     <section class="intro">
       <p class="eyebrow">Milestone payments</p>
       <h1>Get paid for the work,<br /><em>not the argument.</em></h1>
-      <p class="lede">Clients fund each milestone up front with a PayPal hold. When the work lands, release it in full, release part of it, or return it. Every cent is accounted for.</p>
+      <p class="lede">Agree in plain words. The client's money is held with PayPal. An AI referee checks the delivered work against the contract and proposes what to release. A person approves, and PayPal moves exactly that.</p>
     </section>
 
     {#if error}
@@ -61,6 +62,8 @@
         Copy <code>.env.example</code> to <code>.env</code>, add your sandbox client ID and secret, then restart <code>npm run dev</code>.
       </div>
     {/if}
+
+    <ContractDrafter {config} oncreate={(result) => (milestones = [...result.milestones, ...milestones])} onerror={(message) => (error = message)} />
 
     <Summary {milestones} />
 
@@ -90,7 +93,10 @@
       </section>
 
       <aside class="side">
-        <Composer oncreate={(m) => (milestones = [m, ...milestones])} onerror={(message) => (error = message)} />
+        <details class="manual">
+          <summary>Add a milestone by hand</summary>
+          <Composer oncreate={(m) => (milestones = [m, ...milestones])} onerror={(message) => (error = message)} />
+        </details>
 
         <div class="how">
           <h3>How money moves</h3>

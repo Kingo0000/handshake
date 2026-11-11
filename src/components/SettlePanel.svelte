@@ -1,7 +1,7 @@
 <script>
   import { formatMoney, fromCents, toCents } from '../money.js';
 
-  let { milestone, busy, onrelease, onvoid } = $props();
+  let { milestone, busy, suggestion = null, onrelease, onvoid } = $props();
 
   const PRESETS = [100, 75, 50, 25];
 
@@ -15,6 +15,17 @@
   );
   const returnCents = $derived(total - releaseCents);
   const valid = $derived(releaseCents > 0 && releaseCents <= total);
+
+  // Applying the AI's proposal only fills in the amount; a person still confirms it.
+  $effect(() => {
+    if (!suggestion) return;
+    confirming = null;
+    if (suggestion.percent === 100) percent = 100;
+    // A refund proposal must never pre-fill a release: zero it, so only the refund button can act.
+    else if (suggestion.action === 'void' || suggestion.percent === 0) { percent = 'custom'; custom = '0.00'; }
+    else if (PRESETS.includes(suggestion.percent)) percent = suggestion.percent;
+    else { percent = 'custom'; custom = suggestion.amount; }
+  });
 
   function pick(value) {
     percent = value;
