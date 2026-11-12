@@ -1,49 +1,60 @@
 # Handshake
 
-**An AI referee for freelance payments. The client's money is held through PayPal, an AI agent checks the work against what was agreed, and the payment is released, partly released or refunded based on evidence instead of an argument.**
+**An AI referee for freelance payments.** PayPal holds the client's money, an AI agent checks the delivered work in a real browser, and a person approves the split it proposes. The freelancer is paid for what passed, and the rest goes back to the client automatically.
 
-Built for the PayPal AI Hackathon (deadline Nov 12, 2026).
+**Live demo:** https://handshake-beta-amber.vercel.app (PayPal sandbox, no login needed) · Built for the PayPal AI Hackathon.
 
 ---
 
 ## The problem
 
-Cross-border freelancers (for example a Lagos developer, a Manila designer or a Nairobi copywriter working for a US client) lose money in two ways:
+Cross-border freelancers (a Lagos developer, a Manila designer, a Nairobi copywriter working for a US client) lose money two ways: the client goes quiet after delivery, or the client says "this isn't what I asked for" and neither side has an objective record. Clients have the opposite fear: paying upfront and getting nothing.
 
-1. **Non-payment.** The work gets delivered and the client goes quiet.
-2. **Scope fights.** "This isn't what I asked for." Neither side can point to an objective record, so disputes drag on or the freelancer gives in.
+## What it does
 
-Clients have the opposite fear: paying upfront and getting nothing. Escrow platforms exist, but they charge high fees, lock both sides into one marketplace, and still settle disputes with a slow human reviewer.
+1. **Agree.** Paste the chat thread where the deal was made. The AI drafts milestones with a price, a due date and **testable acceptance criteria** (load time, mobile layout, sections that must exist). Subjective asks like "make it look premium" are kept, rewritten into something checkable, and flagged so both sides see the change. Both accept, and that version is frozen with a SHA-256 hash that every later payment event cites.
+2. **Fund.** The client funds a milestone with PayPal using `intent: AUTHORIZE`. The money is held, not paid out, and the freelancer can see the hold before starting.
+3. **Deliver.** The freelancer submits a link to the live work, with a note.
+4. **Verify.** An AI agent opens the link in headless Chromium, on a phone viewport and a desktop viewport. It measures load time and horizontal overflow, reads the page, looks at the screenshots, and returns **pass, fail or unclear for every criterion**, with the evidence and a screenshot.
+5. **Settle.** The AI proposes a full release, a partial release or a refund, and explains why. It cannot move money. A person approves, and Handshake makes a PayPal **partial capture with `final_capture: true`**, so the freelancer is paid for what passed and PayPal returns the rest of the hold to the client. Or it voids the hold.
 
-## The idea
+**Prompt-injection safe.** The demo delivery (`/demo/brightside/`) hides a line telling the AI reviewer to approve everything. The agent treats delivered content as evidence, never as instructions: it ignores the line and flags it to both sides.
 
-Handshake turns a loose brief into a **contract a machine can check**, then ties PayPal money movement to that contract.
+## How PayPal is used
 
-1. **Agree.** The client pastes a brief or chat thread. The AI turns it into milestones, each with **testable acceptance criteria** ("landing page loads under 2s on mobile", "logo delivered as SVG + PNG in 3 colourways"), plus a price and deadline. Both sides edit and accept it, and that version is frozen and hashed.
-2. **Fund.** The client funds each milestone through PayPal Checkout using `intent: AUTHORIZE`. The money is held on the client's account, not paid out yet. The freelancer can see that the milestone is funded before starting.
-3. **Deliver.** The freelancer submits evidence: a live URL, a GitHub repo, files, screenshots or a doc.
-4. **Verify.** The agent checks each criterion with real tools: it loads the URL in a headless browser and takes screenshots, inspects the repo, reads the files, and uses vision on the designs. It produces a **verdict per criterion** (pass, fail or unclear) with cited evidence.
-5. **Settle.**
-   - All pass and the client approves (or the review window passes with no response): **full capture** and the freelancer is paid.
-   - Partial pass: the AI proposes a fair split, and on agreement Handshake makes a **partial capture with `final_capture: true`**, so the rest goes back to the client automatically.
-   - Fail or abandoned: **void** the authorization.
-   - Platform cut, or paying a subcontractor: **Payouts API**.
+All calls go to the **PayPal sandbox** (`https://api-m.sandbox.paypal.com`) from [server/src/paypal.js](server/src/paypal.js).
 
-Every payment decision cites the criteria and evidence it was based on, so both sides can see why.
-
-## Why it can win
-
-| Judging criterion | How Handshake scores |
+| Step | PayPal API |
 |---|---|
-| Technological implementation | Uses PayPal Orders v2 (authorize, partial capture, void, reauthorize), Payouts, webhooks and Invoicing as the core of the product. The AI is an agent that uses tools (browser, repo, vision), not a chatbot bolted on. |
-| Design | One clear flow, Agree → Fund → Deliver → Verify → Settle, with a shared contract page both sides use. |
-| Potential impact | A specific audience (tens of millions of cross-border freelancers) with a specific, expensive problem: non-payment and scope disputes. |
-| Innovation | The AI decides **how much** money moves, and PayPal's partial capture lets that decision be applied exactly. |
-| Presentation | The demo tells a story: a broken deliverable gets a partial payout, it gets fixed, then the full payout. All of it can be shown in under 3 minutes. |
+| Fund (PayPal button) | JS SDK buttons + Orders v2 `POST /v2/checkout/orders` with `intent: AUTHORIZE`, then `POST /v2/checkout/orders/{id}/authorize` |
+| Fund (judges' shortcut) | Orders v2 with `intent: AUTHORIZE` and a `payment_source.card` using PayPal's published sandbox test card. It's still a real sandbox authorization |
+| Release in full | Payments v2 `POST /v2/payments/authorizations/{id}/capture` |
+| Partial release | The same capture with an `amount` and `final_capture: true`, so PayPal returns the remainder to the client |
+| Refund | Payments v2 `POST /v2/payments/authorizations/{id}/void` |
+| Show the truth | `GET /v2/payments/authorizations/{id}` behind "Verify with PayPal", so nobody has to take Handshake's word for it |
 
-Prizes it targets: the overall prizes, **Best Use of PayPal + AI**, **Most Impactful**, **Best Use of Agentic Commerce**, and **Best Use of Render** (deploy there; your abegreply stack already uses it).
+Every POST sends a `PayPal-Request-Id` idempotency key, so a retried request can never capture twice. The server checks each release against what is held before calling PayPal.
 
-See [PLAN.md](PLAN.md) for the architecture, the 11-day schedule and the demo script.
+## How AI is used
+
+**OpenAI GPT-5 nano** (`gpt-5-nano-2025-08-07`) through the official OpenAI SDK, Chat Completions API, in [server/src/agent.js](server/src/agent.js). The model is one environment variable (`OPENAI_MODEL`).
+
+| Job | How |
+|---|---|
+| Contract drafter | Structured output with a strict JSON schema: milestones, prices, due dates, criteria with a check method, weight and a `vague` flag |
+| Delivery verifier | A tool-using agent loop with two strict function tools: `inspect_url` (Playwright: HTTP status, load time, horizontal overflow, broken images, links, forms, console errors, visible text, and a screenshot passed back to the model as an image) and `submit_verdicts` |
+| Settlement proposer | Structured output: release, partial or void, a percentage, and a plain-language rationale |
+
+**Guardrails.** The AI only proposes. The server turns its percentage into an amount clamped to the hold (a proposal of 140% becomes 100%, covered by a test), a refund proposal can never pre-fill a release, and every money move needs a second click from a person. Measurements override impressions in the verifier's instructions, and delivered content is evidence, never instructions. Each event is logged against the contract hash, including whether a release followed the AI's proposal.
+
+## Try it (judges)
+
+1. Open https://handshake-beta-amber.vercel.app and click **Use a sample brief**, then **Draft contract with AI** (about 15 to 30 seconds).
+2. Click **Accept & freeze contract**.
+3. On Milestone 1, click **Sandbox: hold with PayPal's test card**. No PayPal login needed. (The yellow PayPal button also works with any PayPal sandbox personal account.)
+4. Paste `https://handshake-beta-amber.vercel.app/demo/brightside/` as the delivery link and click **Submit delivery**.
+5. Click **Verify against the contract with AI** (about 1 to 2 minutes). Each criterion gets a verdict with a screenshot, and the hidden instruction is flagged.
+6. Click **Use this proposal**, then click the release button twice. Open **Activity**, then **Verify with PayPal** to see PayPal's own status.
 
 ## Run it locally
 
@@ -51,31 +62,46 @@ Requires Node 22 or newer.
 
 ```bash
 npm install
-cp .env.example .env   # add your PayPal sandbox client ID and secret
+npx playwright install chromium
+cp .env.example .env   # add PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET and OPENAI_API_KEY
 npm run dev            # API on :8787, app on http://localhost:5181
 ```
 
-Get sandbox credentials from [developer.paypal.com](https://developer.paypal.com) → Apps & Credentials → Sandbox → create an app. To fund a milestone in the app, log in to the PayPal popup with the **sandbox personal account** listed under Testing Tools → Sandbox Accounts.
+- **PayPal:** [developer.paypal.com](https://developer.paypal.com) → Apps & Credentials → Sandbox → Create App. The test-card shortcut needs a sandbox business account that can take card payments; a US sandbox business account works.
+- **OpenAI:** [platform.openai.com](https://platform.openai.com) → API keys.
+- `npm test` runs 17 unit and API tests with PayPal and the AI faked.
+- `npm run sandbox:check` runs the money flow against the real sandbox with no browser: hold → full capture, hold → partial capture with the rest returned, hold → void.
 
-Check the whole money flow against the sandbox with no browser (hold → full capture, hold → partial capture with the rest returned, hold → void):
+## Deploy
 
-```bash
-npm run sandbox:check
+**Vercel** (how the live demo runs): `api/index.js` wraps the same Express app as a serverless function. Data and screenshots go to **Vercel Blob** (`BLOB_READ_WRITE_TOKEN`), and the verifier uses `@sparticuz/chromium`. Set `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_ENV=sandbox` and `OPENAI_API_KEY`, connect a Blob store, and deploy. Configuration is in [vercel.json](vercel.json).
+
+**Any Node host:** `npm run build && npm start`, with Playwright's Chromium installed and the same environment variables. Data is a JSON file (`DATA_PATH`).
+
+## Stack
+
+Svelte 5 + Vite · Node 22 + Express 5 · OpenAI SDK · Playwright · PayPal Orders v2 and Payments v2 · Vitest · Vercel + Vercel Blob
+
+## Project layout
+
+```
+api/index.js              Vercel entry (blob store, blob screenshots)
+server/index.js           Local/Node entry
+server/src/app.js         Routes: contracts, milestones, PayPal, verify, settle
+server/src/agent.js       The three AI jobs
+server/src/browser.js     The verifier's browser tool (Playwright)
+server/src/paypal.js      PayPal Orders v2 / Payments v2 client
+server/src/money.js       Cents arithmetic and release planning
+server/src/store.js       JSON file store and Vercel Blob store
+server/demo-sites/        Demo delivery with a mobile bug and a planted prompt injection
+src/                      Svelte app
+test/                     Vitest suites
 ```
 
-`npm test` runs the unit and API tests with PayPal faked.
+## AI tools used
 
-### How money moves
-
-| Milestone state | PayPal call |
-|---|---|
-| Funded (held) | `POST /v2/checkout/orders` with `intent: AUTHORIZE`, buyer approves, then `POST /v2/checkout/orders/{id}/authorize` |
-| Released | `POST /v2/payments/authorizations/{id}/capture` |
-| Partly released | `.../capture` with `amount` and `final_capture: true`, so PayPal returns the rest to the client |
-| Voided | `POST /v2/payments/authorizations/{id}/void` |
-
-The server checks every release against what's held before calling PayPal, and sends idempotency keys (`PayPal-Request-Id`) so a retried request can't capture twice.
+OpenAI GPT-5 nano runs the contract drafter, the verifier agent and the settlement proposer. Claude Code was used as a coding assistant during development.
 
 ## License
 
-MIT
+[MIT](LICENSE)

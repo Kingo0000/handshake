@@ -20,7 +20,7 @@ const SANDBOX_CARD = {
   billing_address: { address_line_1: '1 Main St', admin_area_2: 'San Jose', admin_area_1: 'CA', postal_code: '95131', country_code: 'US' },
 };
 
-export function createApp({ config, store, paypal, agent }) {
+export function createApp({ config, store, paypal, agent, evidenceUrl }) {
   const app = express();
   app.use(express.json({ limit: '100kb' }));
 
@@ -143,7 +143,9 @@ export function createApp({ config, store, paypal, agent }) {
     res.json(await saveMilestone(milestone.id, { review }, { type: 'verified', passed, total: result.verdicts.length, proposedAmount: review.proposal.amount }));
   });
 
-  app.use('/api/evidence', express.static(config.evidencePath, { immutable: true, maxAge: '1y' }));
+  // Screenshots live on disk locally; on serverless hosts evidenceUrl points at blob storage instead.
+  if (evidenceUrl) app.get('/api/evidence/:name', async (req, res) => res.redirect(await evidenceUrl(req.params.name)));
+  else app.use('/api/evidence', express.static(config.evidencePath, { immutable: true, maxAge: '1y' }));
   // Sample deliveries for the demo (one with a broken mobile layout and a planted prompt injection).
   app.use('/demo', express.static(DEMO_SITES));
 

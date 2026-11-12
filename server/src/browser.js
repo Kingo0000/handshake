@@ -11,7 +11,14 @@ const VIEWPORTS = {
 };
 
 let browserPromise;
-const browser = () => (browserPromise ??= chromium.launch());
+const browser = () => (browserPromise ??= launch());
+
+// Serverless hosts have no installed browser, so Vercel uses a Chromium build made for Lambda-style functions.
+async function launch() {
+  if (!process.env.VERCEL) return chromium.launch();
+  const { default: serverless } = await import('@sparticuz/chromium');
+  return chromium.launch({ executablePath: await serverless.executablePath(), args: serverless.args, headless: true });
+}
 
 export function createInspector(evidenceDir) {
   return {

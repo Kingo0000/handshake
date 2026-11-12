@@ -38,3 +38,45 @@ export function createStore(path) {
 
   return { read, update };
 }
+
+// Vercel Blob store for serverless hosting, where the filesystem does not survive between requests.
+// Every write is a new immutable blob, and a read lists the newest one, so a CDN copy is never stale.
+export function createBlobStore({ prefix = 'db/', keep = 10 } = {}) {
+  let queue = Promise.resolve();
+  let blob;
+  const sdk = () => (blob ??= import('@vercel/blob'));
+
+  async function versions() {
+    const { list } = await sdk();
+    const { blobs } = await list({ prefix });
+    return blobs.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
+  }
+
+  async function read() {
+    const [latest] = await versions();
+    if (!latest) return structuredClone(EMPTY);
+    const response = await fetch(latest.url);
+    if (!response.ok) throw new Error(`Could not read the store (${response.status})`);
+    return response.json();
+  }
+
+  async function write(state) {
+    const { put, del } = await sdk();
+    await put(`${prefix}state.json`, JSON.stringify(state), { access: 'public', addRandomSuffix: true, contentType: 'application/json' });
+    const stale = (await versions()).slice(keep);
+    if (stale.length) await del(stale.map((b) => b.url)).catch(() => {});
+  }
+
+  function update(fn) {
+    const run = queue.then(async () => {
+      const state = await read();
+      const result = await fn(state);
+      await write(state);
+      return result;
+    });
+    queue = run.catch(() => {});
+    return run;
+  }
+
+  return { read, update };
+}

@@ -17,6 +17,8 @@
     "sandbox:check": "node --env-file-if-exists=.env scripts/sandbox-check.mjs"
   },
   "dependencies": {
+    "@sparticuz/chromium": "^153.0.0",
+    "@vercel/blob": "^2.9.0",
     "express": "^5.3.0",
     "openai": "^5.23.2",
     "playwright": "^1.56.1"

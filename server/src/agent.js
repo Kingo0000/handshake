@@ -149,6 +149,8 @@ When the client's wording is subjective ("make it pop", "premium feel", "modern"
 Prefer check_method url or visual for anything about a website.`,
         `Brief:\n"""\n${brief}\n"""`,
         CONTRACT_SCHEMA,
+        // Drafting is mostly restructuring the brief; low effort keeps it to well under a minute.
+        'low',
       );
     },
 
